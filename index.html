@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
-  <title>Knobeln – Strafpunkte v5</title>
+  <title>Knobeln – Strafpunkte v5.3.2</title>
   <style>
     :root {
       --bg: #0b1220;
@@ -582,7 +582,7 @@
           <button id="menuBtn" class="menu-btn" aria-label="Menü öffnen">☰</button>
           <div>
             <h1>Knobeln – Strafpunkte</h1>
-            <p class="section-subtitle">Eine offene Partie mit bis zu drei Spielrunden, je 5 oder 10 Durchgänge, mit Autosave, JSON-Sicherung und vereinfachtem Undo/Redo.</p>
+            <p class="section-subtitle">Eine Partie mit bis zu drei Spielrunden, je 5 oder 10 Durchgänge sind möglich.</p>
           </div>
         </div>
         <div class="pill-row">
@@ -609,7 +609,7 @@
 
     <section id="scoreboardSection" class="card hidden scoreboard">
       <div class="section-title">Aktuelle Spielanzeige</div>
-      <div class="section-subtitle">Spielrunde und Durchgänge werden hier groß angezeigt. Nach dem 5. oder 10. Durchgang ist Schluss. Zum Weiterspielen muss die Spielrunde beendet werden.</div>
+      <div class="section-subtitle">Spielrunde und Durchgänge werden hier groß angezeigt. Nach dem 5. oder 10. Durchgang ist Schluss. Zum Weiterspielen nach jedem Durchgang muss muss die aktive Spielrunde zuerst einmal beendet werden.</div>
       <div class="scoreboard-grid" style="margin-top: 8px;">
         <div class="scorebox">
           <div class="scorebox-label">Spielrunde</div>
@@ -661,7 +661,7 @@
       <div id="tabPanel-audit" class="tab-panel hidden">
         <div class="label-row">
           <span class="pill amber">Gesamter Verlauf</span>
-          <span class="tiny muted">alle Spielrunden der aktuellen Partie mit Verteilung an Gegenspieler</span>
+          <span class="tiny muted">alle Spielrunden der aktuellen Partie mit Strafpunkte-Verteilung an Gegenspieler</span>
         </div>
         <div id="auditList" class="audit-list scroll-limit"></div>
       </div>
@@ -692,11 +692,11 @@
     <nav>
       <button id="drawerImportBtn">
         <span class="menu-title">Sicherung importieren</span>
-        <span class="menu-subtitle">Eine exportierte JSON-Datei laden und den Stand in das Tool übernehmen.</span>
+        <span class="menu-subtitle">Eine exportierte Sicherung laden und den Stand in das Tool übernehmen.</span>
       </button>
       <button id="drawerExportBtn">
         <span class="menu-title">Sicherung exportieren</span>
-        <span class="menu-subtitle">Den aktuellen Stand als JSON-Datei lokal sichern.</span>
+        <span class="menu-subtitle">Den aktuellen Stand als Sicherung lokal sichern.</span>
       </button>
       <button id="drawerCleanStartBtn" class="info">
         <span class="menu-title">Neues sauberes Spiel starten</span>
