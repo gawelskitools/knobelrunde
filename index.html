@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
-  <title>Knobeln – Strafpunkte v5</title>
+  <title>Knobelrunde 3.0</title>
   <style>
     :root {
       --bg: #0b1220;
@@ -62,6 +62,12 @@
     button.warn { background: var(--amber); color: #331f03; border: none; font-weight: 800; }
     button.danger { background: var(--red); color: white; border: none; font-weight: 800; }
     button.violet { background: var(--violet); color: white; border: none; font-weight: 800; }
+    button.cashpenalty {
+      background: linear-gradient(180deg, rgba(161,98,7,.92), rgba(120,53,15,.92));
+      color: #fff7ed;
+      border: 1px solid rgba(245,158,11,.26);
+      font-weight: 800;
+    }
     button.ghost { background: transparent; box-shadow: none; }
 
     .page {
@@ -164,6 +170,7 @@
     .pill.red { background: var(--red-soft); border-color: rgba(239,68,68,.35); }
     .pill.amber { background: var(--amber-soft); border-color: rgba(245,158,11,.35); }
     .pill.violet { background: var(--violet-soft); border-color: rgba(168,85,247,.40); }
+    .pill.cash { background: rgba(161,98,7,.18); border-color: rgba(245,158,11,.34); color: #fef3c7; }
 
     .top-title { font-size: 1.04rem; font-weight: 900; }
     .control-buttons {
@@ -886,7 +893,7 @@
       <div class="drawer-section-label">Werkzeuge</div>
       <nav>
         <button id="drawerImportBtn">
-          <span class="menu-title">Alten Spielstand laden</span>
+          <span class="menu-title">Spielstand laden</span>
           <span class="menu-subtitle">Eine exportierte JSON-Datei laden und den Stand in das Tool übernehmen.</span>
         </button>
         <button id="drawerExportBtn">
@@ -894,7 +901,7 @@
           <span class="menu-subtitle">Den aktuellen Stand als JSON-Datei lokal sichern.</span>
         </button>
         <button id="drawerCleanStartBtn" class="info">
-          <span class="menu-title">Neues sauberes Spiel starten</span>
+          <span class="menu-title">Neues Spiel starten</span>
           <span class="menu-subtitle">Mit neuem Spiel beginnen und alte Auto-Save-Daten verwerfen.</span>
         </button>
       </nav>
@@ -931,11 +938,16 @@
     const MAX_ROUNDS_PER_SESSION = 3;
     const MAX_UNDO = 2;
     const MAX_FAVORITES = 12;
+    const CASH_PENALTY_VALUE_CENTS = 50;
+    const CASH_PENALTY_TYPES = {
+      mattenflucht: { label: 'Matten-Flucht', shortLabel: 'Matten-Flucht' },
+      wuerfelflucht: { label: 'Würfel-Flucht', shortLabel: 'Würfel-Flucht' },
+      neuwuerfeln: { label: 'Neu-Würfeln', shortLabel: 'Neu-Würfeln' }
+    };
 
     // Oft gespielte Namen fest im Code hinterlegen. Reihenfolge = Anzeige im Spieler-Popup.
     const PRESET_PLAYERS = [
-      { name: 'Alex', code: 'A' },
-	  { name: 'Arno', code: 'Ösi' },
+      { name: 'Alex', code: 'A' },	  
       { name: 'Buri', code: 'B' },
 	  { name: 'Dennis', code: 'D' },
       { name: 'Klappi', code: 'K' },
@@ -1056,6 +1068,7 @@
         points: Array.isArray(currentGame.points) ? currentGame.points : [],
         settlements: Array.isArray(currentGame.settlements) ? currentGame.settlements.map((item) => ({ ...item, roundIndex: item.roundIndex || 1 })) : [],
         finishedRounds: [],
+        cashPenalties: Array.isArray(currentGame.cashPenalties) ? currentGame.cashPenalties : [],
         currentRound: {
           index: 1,
           target: 10,
@@ -1073,6 +1086,7 @@
       return {
         ...session,
         finishedRounds: Array.isArray(session.finishedRounds) ? session.finishedRounds : [],
+        cashPenalties: Array.isArray(session.cashPenalties) ? session.cashPenalties : [],
         currentRound: session.currentRound || createRoundObject(session.roundIndex || 1, session.roundTarget || 10, session.createdAt || new Date().toISOString())
       };
     }
@@ -1095,6 +1109,7 @@
         players,
         points,
         settlements,
+        cashPenalties: Array.isArray(entry.cashPenalties) ? entry.cashPenalties : [],
         currentRound: entry.currentRound || {
           index: entry.roundIndex || 1,
           target: entry.roundTarget || Math.max(5, turnsCompleted || 10),
@@ -1180,6 +1195,7 @@
         points: [],
         settlements: [],
         finishedRounds: [],
+        cashPenalties: [],
         finalRoundExtensionUsed: false,
         finalRoundExtraTurns: 0,
         currentRound: createRoundObject(1, roundTarget, iso)
@@ -1310,7 +1326,8 @@
         showToast('Die aktuelle Spielrunde ist bereits beendet.');
         return;
       }
-      if (session.currentRound.turnsCompleted >= session.currentRound.target) {
+      const isCashPenaltyAction = ['mattenflucht', 'wuerfelflucht', 'neuwuerfeln'].includes(action);
+      if (!isCashPenaltyAction && session.currentRound.turnsCompleted >= session.currentRound.target) {
         showToast('Die maximale Anzahl an Durchgängen ist erreicht. Bitte die Spielrunde jetzt beenden.');
         return;
       }
@@ -1353,6 +1370,19 @@
           ]
         });
         if (ok === 'yes') applyExit(player.id);
+      }
+
+      if (isCashPenaltyAction) {
+        const config = CASH_PENALTY_TYPES[action];
+        const ok = await showDialog({
+          title: `${config.label} eintragen`,
+          message: `Wirklich ${config.label} für ${player.name} eintragen? Das zählt 0,50 € für die Strafkasse und nicht als Durchgang.`,
+          actions: [
+            { label: 'Ja, eintragen', value: 'yes', className: 'warn' },
+            { label: 'Abbrechen', value: 'no' }
+          ]
+        });
+        if (ok === 'yes') applyUndoableCashPenalty(action, player.id);
       }
     }
 
@@ -1446,6 +1476,65 @@
       saveState(true);
       render();
       notifyIfRoundTargetReached(session);
+    }
+
+    function applyUndoableCashPenalty(type, playerId) {
+      const session = state.currentSession;
+      if (!session) return;
+      const actor = session.players.find((player) => player.id === playerId);
+      if (!actor) return;
+      const config = CASH_PENALTY_TYPES[type];
+      if (!config) return;
+
+      const beforeSession = deepClone(session);
+      const ts = new Date().toISOString();
+      const event = {
+        id: uid('event'),
+        ts,
+        type,
+        actorId: actor.id,
+        actorCode: actor.code,
+        actorName: actor.name,
+        auditId: null,
+        label: `${actor.name} (${actor.code}) erhält ${config.label} für die Strafkasse (0,50 €).`
+      };
+
+      session.cashPenalties.push({
+        id: uid('cash'),
+        eventId: event.id,
+        type,
+        ts,
+        roundIndex: session.currentRound.index,
+        playerId: actor.id,
+        playerName: actor.name,
+        playerCode: actor.code,
+        amountCents: CASH_PENALTY_VALUE_CENTS
+      });
+
+      session.currentRound.events.push(event);
+      const afterSession = deepClone(session);
+      const auditId = uid('audit');
+      event.auditId = auditId;
+      const storedEvent = session.currentRound.events.find((item) => item.id === event.id);
+      if (storedEvent) storedEvent.auditId = auditId;
+
+      state.actionAudit = state.actionAudit.filter((entry) => entry.status === 'applied');
+      state.actionAudit.push({
+        id: auditId,
+        eventId: event.id,
+        actionType: type,
+        label: event.label,
+        ts,
+        actorName: actor.name,
+        actorCode: actor.code,
+        beforeSession,
+        afterSession,
+        status: 'applied'
+      });
+      if (state.actionAudit.length > MAX_UNDO) state.actionAudit = state.actionAudit.slice(-MAX_UNDO);
+
+      saveState(true);
+      render();
     }
 
     function applyExit(playerId) {
@@ -1686,6 +1775,7 @@
         players: deepClone(session.players),
         points: deepClone(session.points),
         settlements: deepClone(session.settlements.filter((item) => item.roundIndex === session.currentRound.index)),
+        cashPenalties: deepClone(session.cashPenalties || []),
         currentRound: deepClone(session.currentRound)
       };
     }
@@ -1748,7 +1838,7 @@
       if (auditAction === 'undo') {
         const answer = await showDialog({
           title: 'Eintrag rückgängig machen',
-          message: 'Dieser Verlust-/Lustknobeln-Eintrag wird zurückgenommen. Wirklich rückgängig machen?',
+          message: 'Dieser Eintrag wird zurückgenommen. Wirklich rückgängig machen?',
           actions: [
             { label: 'Ja, rückgängig', value: 'yes', className: 'warn' },
             { label: 'Abbrechen', value: 'no' }
@@ -1858,6 +1948,7 @@
         const receivesChips = renderBeerReceiveChips(view.incomingOpenDetails);
         const owesBeerLabel = renderBeerOwesLabel(view.outgoingOpenDetails.length);
         const openFromRows = renderBeerOpenFromRows(view.incomingOpenDetails);
+        const cashPenaltySummary = getCashPenaltySummary(session, player.id);
         return `
           <article class="player-card ${player.status === 'active' ? 'active' : 'exited'}">
             <div class="player-head">
@@ -1884,12 +1975,21 @@
                 <div class="muted">Offen von Mitspielern</div>
                 <div class="beer-mini-list">${openFromRows}</div>
               </div>
+              <div class="info-row">
+                <div class="muted">Strafkasse</div>
+                <div>${renderCashPenaltyCompact(cashPenaltySummary)}</div>
+              </div>
             </div>
 
             <div class="player-actions">
               <button data-action="loss" data-player-id="${escapeHtml(player.id)}" class="danger" ${player.status !== 'active' || session.currentRound.status !== 'open' || session.currentRound.turnsCompleted >= session.currentRound.target ? 'disabled' : ''}>Verloren</button>
               <button data-action="lust" data-player-id="${escapeHtml(player.id)}" class="violet" ${player.status !== 'active' || session.currentRound.status !== 'open' || session.currentRound.turnsCompleted >= session.currentRound.target ? 'disabled' : ''}>Lustknobeln</button>
               <button data-action="exit" data-player-id="${escapeHtml(player.id)}" class="warn" ${player.status !== 'active' || session.currentRound.status !== 'open' || session.currentRound.turnsCompleted >= session.currentRound.target ? 'disabled' : ''}>Ausstieg</button>
+            </div>
+            <div class="player-actions">
+              <button data-action="mattenflucht" data-player-id="${escapeHtml(player.id)}" class="cashpenalty" ${player.status !== 'active' || session.currentRound.status !== 'open' ? 'disabled' : ''}>Matten-Flucht</button>
+              <button data-action="wuerfelflucht" data-player-id="${escapeHtml(player.id)}" class="cashpenalty" ${player.status !== 'active' || session.currentRound.status !== 'open' ? 'disabled' : ''}>Würfel-Flucht</button>
+              <button data-action="neuwuerfeln" data-player-id="${escapeHtml(player.id)}" class="cashpenalty" ${player.status !== 'active' || session.currentRound.status !== 'open' ? 'disabled' : ''}>Neu-Würfeln</button>
               ${player.status === 'exited' ? `<button data-action="rejoin" data-player-id="${escapeHtml(player.id)}" class="info rejoin" ${session.currentRound.status !== 'open' ? 'disabled' : ''}>Wiedereinsteigen</button>` : ''}
             </div>
           </article>
@@ -2049,10 +2149,15 @@
                 <div class="history-kpi"><div class="tiny muted">Lustknobeln</div><div><strong>${summary.lustCount}</strong></div></div>
                 <div class="history-kpi"><div class="tiny muted">Ausstiege</div><div><strong>${summary.exitCount}</strong></div></div>
                 <div class="history-kpi"><div class="tiny muted">Wiedereinstiege</div><div><strong>${summary.rejoinCount}</strong></div></div>
+                <div class="history-kpi"><div class="tiny muted">Matten-Flucht</div><div><strong>${summary.mattenFluchtCount}</strong></div></div>
+                <div class="history-kpi"><div class="tiny muted">Würfel-Flucht</div><div><strong>${summary.wuerfelFluchtCount}</strong></div></div>
+                <div class="history-kpi"><div class="tiny muted">Neu-Würfeln</div><div><strong>${summary.neuWuerfelnCount}</strong></div></div>
                 <div class="history-kpi"><div class="tiny muted">Neue Biere</div><div><strong>${summary.newPoints}</strong></div></div>
+                <div class="history-kpi"><div class="tiny muted">Strafkasse Runde</div><div><strong>${formatCentsAsEuro(summary.roundCashPenaltyTotalCents)}</strong></div></div>
               </div>
               <div class="small"><strong>Mitspieler:</strong> ${escapeHtml(summary.playerCodesLabel)}</div>
               <div class="small"><strong>Bierverteilung in dieser Runde:</strong> ${escapeHtml(summary.actorSummaryLabel)}</div>
+              <div class="small"><strong>Strafkasse in dieser Runde:</strong> ${escapeHtml(summary.cashSummaryLabel)}</div>
               <div class="tiny muted">${summary.compactSettlements.length ? 'Gegenrechnung mit früheren Spielrunden derselben Partie: ja' : 'Gegenrechnung mit früheren Spielrunden derselben Partie: nein'}</div>
             </div>
             <div class="history-zone">
@@ -2085,11 +2190,14 @@
 
     function getHistoryRoundSummary(entry) {
       const events = (entry.currentRound && Array.isArray(entry.currentRound.events) ? entry.currentRound.events : [])
-        .filter((ev) => ['loss', 'lust', 'exit', 'rejoin'].includes(ev.type));
+        .filter((ev) => ['loss', 'lust', 'exit', 'rejoin', 'mattenflucht', 'wuerfelflucht', 'neuwuerfeln'].includes(ev.type));
       const lossEvents = events.filter((ev) => ev.type === 'loss');
       const lustEvents = events.filter((ev) => ev.type === 'lust');
       const exitEvents = events.filter((ev) => ev.type === 'exit');
       const rejoinEvents = events.filter((ev) => ev.type === 'rejoin');
+      const mattenFluchtEvents = events.filter((ev) => ev.type === 'mattenflucht');
+      const wuerfelFluchtEvents = events.filter((ev) => ev.type === 'wuerfelflucht');
+      const neuWuerfelnEvents = events.filter((ev) => ev.type === 'neuwuerfeln');
       const actorCounts = new Map();
       let newPoints = 0;
       for (const ev of [...lossEvents, ...lustEvents]) {
@@ -2104,6 +2212,16 @@
       const actorSummaryLabel = actorCounts.size
         ? Array.from(actorCounts.values()).map((item) => `${item.label} verteilt ${item.count} ${item.count === 1 ? 'Bier' : 'Biere'}`).join(', ')
         : 'keine neuen Biere';
+      const roundCashPenalties = (entry.cashPenalties || []).filter((item) => item.roundIndex === entry.roundIndex);
+      const roundCashPenaltyCounts = {
+        mattenflucht: roundCashPenalties.filter((item) => item.type === 'mattenflucht').length,
+        wuerfelflucht: roundCashPenalties.filter((item) => item.type === 'wuerfelflucht').length,
+        neuwuerfeln: roundCashPenalties.filter((item) => item.type === 'neuwuerfeln').length
+      };
+      const roundCashPenaltyTotalCents = roundCashPenalties.reduce((sum, item) => sum + Number(item.amountCents || CASH_PENALTY_VALUE_CENTS), 0);
+      const cashParts = Object.entries(CASH_PENALTY_TYPES)
+        .map(([type, config]) => `${config.label}: ${roundCashPenaltyCounts[type] || 0}`)
+        .join(', ');
       const pairMap = new Map();
       let cancelledPointsTotal = 0;
       for (const settlement of entry.settlements || []) {
@@ -2126,6 +2244,11 @@
         lustCount: lustEvents.length,
         exitCount: exitEvents.length,
         rejoinCount: rejoinEvents.length,
+        mattenFluchtCount: mattenFluchtEvents.length,
+        wuerfelFluchtCount: wuerfelFluchtEvents.length,
+        neuWuerfelnCount: neuWuerfelnEvents.length,
+        roundCashPenaltyTotalCents,
+        cashSummaryLabel: cashParts,
         newPoints,
         actorSummaryLabel,
         compactSettlements,
@@ -2190,12 +2313,14 @@
           }
           const receivesFrom = Array.from(groupedIncoming.values())
             .sort((a, b) => a.fromName.localeCompare(b.fromName, 'de'));
+          const cashPenaltySummary = getCashPenaltySummary(container, player.id);
           return {
             player,
             beersToPay: outgoingOpen.length,
             totalReceives: incomingOpen.length,
             receivesFrom,
-            getsNothingFromOthers: receivesFrom.length === 0
+            getsNothingFromOthers: receivesFrom.length === 0,
+            cashPenaltySummary
           };
         }),
         pubLedger: players.map((player) => ({
@@ -2209,6 +2334,8 @@
       const { showWirtshausabrechnung = true, showPlayerHeaders = true } = options;
       const title = beerSettlement.sessionTitle || container.sessionTitle || container.title || 'Knobelpartie';
       const timestamp = formatDateTime(beerSettlement.finishedAt || container.finishedAt || (container.currentRound ? container.currentRound.finishedAt : null));
+      const cashPenaltySettlement = getCashPenaltySettlement(container);
+
       const playerCards = beerSettlement.perPlayer.map((item) => {
         const receiveRows = item.receivesFrom.length
           ? item.receivesFrom.map((receive) => `
@@ -2218,6 +2345,21 @@
             </div>
           `).join('')
           : '<div class="empty">keins von Mitspielern offen.</div>';
+
+        const cashSummary = cashPenaltySettlement.perPlayerMap.get(item.player.id) || {
+          totalCents: 0,
+          lines: []
+        };
+
+        const cashRows = cashSummary.lines.length
+          ? cashSummary.lines.map((penalty) => `
+            <div class="beer-from-row">
+              <div><strong>${escapeHtml(penalty.label)}</strong></div>
+              <div>${penalty.count} × 0,50 € = ${formatCentsAsEuro(penalty.cents)}</div>
+            </div>
+          `).join('')
+          : '<div class="empty">keine Strafkassenschulden.</div>';
+
         return `
           <div class="beer-player-card">
             <div class="beer-player-head">
@@ -2236,15 +2378,30 @@
             </div>
             <div class="small"><strong>Offen von Mitspielern:</strong></div>
             <div class="beer-from-list">${receiveRows}</div>
+            <div class="small" style="margin-top:4px;"><strong>Strafkasse:</strong></div>
+            <div class="beer-from-list">${cashRows}</div>
+            <div class="beer-kpi" style="margin-top:4px;">
+              <span class="label">Gesamt Strafkasse</span>
+              <span class="value">${formatCentsAsEuro(cashSummary.totalCents)}</span>
+            </div>
           </div>
         `;
       }).join('');
+
       const ledgerRows = beerSettlement.pubLedger.map((item) => `
         <div class="beer-ledger-row ${item.beersToPay === 0 ? 'zero' : ''}">
           <div><strong>${escapeHtml(item.player.name)} (${escapeHtml(item.player.code)})</strong></div>
           <div>${item.beersToPay} ${item.beersToPay === 1 ? 'Bier' : 'Biere'}</div>
         </div>
       `).join('');
+
+      const cashLedgerRows = cashPenaltySettlement.ledger.map((item) => `
+        <div class="beer-ledger-row ${item.totalCents === 0 ? 'zero' : ''}">
+          <div><strong>${escapeHtml(item.player.name)} (${escapeHtml(item.player.code)})</strong></div>
+          <div>${formatCentsAsEuro(item.totalCents)}</div>
+        </div>
+      `).join('');
+
       return `
         <div class="beer-sheet">
           <div class="beer-sheet-header">
@@ -2262,12 +2419,18 @@
               </div>
               <div class="beer-ledger" style="margin-top:10px;">${ledgerRows}</div>
             </div>
+            <div class="history-zone" style="margin-top:10px;">
+              <div class="history-zone-title">Strafkasse</div>
+              <div class="tiny muted">Hier steht nur die Gesamtsumme der Strafkassenschulden pro Spieler.</div>
+              <div class="beer-ledger" style="margin-top:10px;">${cashLedgerRows}</div>
+              <div class="small" style="margin-top:8px;"><strong>Gesamt Strafkasse:</strong> ${formatCentsAsEuro(cashPenaltySettlement.totalCentsAll)}</div>
+            </div>
           ` : ''}
         </div>
       `;
     }
 
-    function groupBeerByFrom(details) {
+function groupBeerByFrom(details) {
       const grouped = new Map();
       for (const item of details || []) {
         const key = item.fromId || item.code || item.title;
@@ -2301,22 +2464,91 @@
       return `<strong>${count}</strong> ${count === 1 ? 'Bier' : 'Biere'}`;
     }
 
+    function formatCentsAsEuro(cents) {
+      return `${(Number(cents || 0) / 100).toFixed(2).replace('.', ',')} €`;
+    }
+
+    function getCashPenaltyEntries(container, playerId) {
+      return (container.cashPenalties || []).filter((item) => item.playerId === playerId);
+    }
+
+    function getCashPenaltySummary(container, playerId) {
+      const entries = getCashPenaltyEntries(container, playerId);
+      const counts = {
+        mattenflucht: 0,
+        wuerfelflucht: 0,
+        neuwuerfeln: 0
+      };
+      entries.forEach((entry) => {
+        if (counts[entry.type] !== undefined) counts[entry.type] += 1;
+      });
+      const lines = Object.entries(CASH_PENALTY_TYPES)
+        .map(([type, config]) => ({
+          type,
+          label: config.label,
+          count: counts[type],
+          cents: counts[type] * CASH_PENALTY_VALUE_CENTS
+        }))
+        .filter((item) => item.count > 0);
+      const totalCents = lines.reduce((sum, item) => sum + item.cents, 0);
+      return {
+        counts,
+        lines,
+        totalCount: entries.length,
+        totalCents
+      };
+    }
+
+    function renderCashPenaltyCompact(summary) {
+      if (!summary.totalCount) return '<span class="empty">keine</span>';
+      const parts = summary.lines.map((item) => `${item.label}: ${item.count}`);
+      return `<strong>${formatCentsAsEuro(summary.totalCents)}</strong><div class="tiny muted">${escapeHtml(parts.join(' · '))}</div>`;
+    }
+
+    function getCashPenaltySettlement(container) {
+      const players = (container.players || []).slice().sort((a, b) => a.name.localeCompare(b.name, 'de'));
+      const perPlayer = players.map((player) => {
+        const summary = getCashPenaltySummary(container, player.id);
+        return {
+          player,
+          lines: summary.lines,
+          totalCount: summary.totalCount,
+          totalCents: summary.totalCents
+        };
+      });
+      return {
+        perPlayer,
+        perPlayerMap: new Map(perPlayer.map((item) => [item.player.id, item])),
+        ledger: perPlayer.map((item) => ({ player: item.player, totalCents: item.totalCents })),
+        totalCentsAll: perPlayer.reduce((sum, item) => sum + item.totalCents, 0)
+      };
+    }
+
 
     function buildSettlementText(container, beerSettlement) {
       const title = beerSettlement.sessionTitle || container.sessionTitle || container.title || 'Knobelpartie';
       const timestamp = formatDateTime(beerSettlement.finishedAt || container.finishedAt || (container.currentRound ? container.currentRound.finishedAt : null));
+      const cashPenaltySettlement = getCashPenaltySettlement(container);
       const playerText = beerSettlement.perPlayer.map((item) => {
         const receives = item.receivesFrom.length
           ? item.receivesFrom
               .map((receive) => `- ${receive.fromName} (${receive.fromCode}): ${receive.count} ${receive.count === 1 ? 'Bier' : 'Biere'}`)
               .join('\n')
           : '- keins';
-        return `${item.player.name} (${item.player.code})\nSchuldet Freibier: ${item.beersToPay} ${item.beersToPay === 1 ? 'Bier' : 'Biere'}\nBekommt Freibier: ${item.totalReceives} ${item.totalReceives === 1 ? 'Bier' : 'Biere'}\nOffen von Mitspielern:\n${receives}`;
+        const cashLines = item.cashPenaltySummary.lines.length
+          ? item.cashPenaltySummary.lines
+              .map((penalty) => `- ${penalty.label}: ${penalty.count} × 0,50 € = ${formatCentsAsEuro(penalty.cents)}`)
+              .join('\n')
+          : '- keine';
+        return `${item.player.name} (${item.player.code})\nSchuldet Freibier: ${item.beersToPay} ${item.beersToPay === 1 ? 'Bier' : 'Biere'}\nBekommt Freibier: ${item.totalReceives} ${item.totalReceives === 1 ? 'Bier' : 'Biere'}\nOffen von Mitspielern:\n${receives}\nStrafkasse:\n${cashLines}\nGesamt Strafkasse: ${formatCentsAsEuro(item.cashPenaltySummary.totalCents)}`;
       }).join('\n\n');
       const ledgerText = beerSettlement.pubLedger
         .map((item) => `- ${item.player.name} (${item.player.code}): ${item.beersToPay} ${item.beersToPay === 1 ? 'Bier' : 'Biere'}`)
         .join('\n');
-      return `${title}\n${timestamp}\n\n${playerText}\n\nDie Wirtshausabrechnung\n${ledgerText}`;
+      const cashLedgerText = cashPenaltySettlement.ledger
+        .map((item) => `- ${item.player.name} (${item.player.code}): ${formatCentsAsEuro(item.totalCents)}`)
+        .join('\n');
+      return `${title}\n${timestamp}\n\n${playerText}\n\nDie Wirtshausabrechnung\n${ledgerText}\n\nStrafkasse\n${cashLedgerText}\nGesamt Strafkasse: ${formatCentsAsEuro(cashPenaltySettlement.totalCentsAll)}`;
     }
 
     async function copyTextToClipboard(textToCopy) {
@@ -2559,23 +2791,24 @@
       showCustomDialog({
         title: 'Spielanleitung',
         message: 'Kurze Spielanleitung für die Nutzung der App.',
-        bodyHtml: `
-          <div class="drawer-info-list">
-            <div>• Tippe auf „Neue Partie anlegen“ und wähle 5 oder 10 Durchgänge pro Spielrunde.</div>
-			<div>• Füge Spieler über die Plus-Karte hinzu. Du kannst einen Namen aus der Liste wählen oder neu eingeben.</div>
-			<div>• Das Kürzel auf der jeweiligen Spielerkarte oben rechts ist für Falscheingaben gedacht. Dort kann ein Spielername gelöscht werden (nur vor Spielbeginn).</div>
-			<div>• Eine Partie läuft über bis zu 3 Spielrunden. Jede Spielrunde hat 5 oder 10 Durchgänge.</div>
-			<div>• Der erste Durchgang der ersten Spielrunde startet immer mit "Schuss einfach".</div>
-			<div>• Eine Partie kann jederzeit sofort vorzeitig über den roten Button "Spielrunde beenden" beendet werden.</div>
-            <div>• Grün markierte Spieler-Karten sind aktiv, graue Karten sind ausgestiegen.</div>
-			<div>• Nutze auf der Spielerkarte die Buttons Verloren, Lustknobeln, Ausstieg oder Wiedereinsteigen.</div>
-			<div>• Verloren oder Lustknobeln verteilt automatisch je 1 Strafpunkt an alle anderen aktiven Spieler.</div>
-			<div>• Nach dem letzten Durchgang (5/5 oder 10/10) jeder Spielrunde muss die Spielrunde über den roten Button "Spielrunde beenden" immer zuerst beendet werden.</div>
-			<div>• Danach wird immer die Zwischen-/End-Abrechnung angezeigt, die bei Bedarf als Text in die Zwischenablage kopiert werden kann.</div>
-			<div>• Erst danach kann es mit der nächsten Spielrunde weitergehen.</div>			
-			<div>• Verlauf und Historie sind über die Bereiche unten oder das Menü erreichbar.Dort kann auch immer der letzte vergebene Strafpunkt Rückgängig gemacht werden</div>            
-            <div>• Sicherungsdateien eines Spiels und ein sauberer Neustart liegen im Burger-Menü unter Werkzeuge.</div>
-          </div>`,		  
+        bodyHtml: [
+          '<div class="drawer-info-list">',
+          '<div>• Tippe auf „Neue Partie anlegen“ und wähle 5 oder 10 Durchgänge pro Spielrunde.</div>',
+          '<div>• Füge Spieler über die Plus-Karte hinzu. Du kannst einen Namen aus der Liste wählen oder neu eingeben.</div>',
+          '<div>• Das Kürzel auf der jeweiligen Spielerkarte oben rechts ist für Falscheingaben gedacht. Dort kann ein Spielername gelöscht werden (nur vor Spielbeginn).</div>',
+          '<div>• Eine Partie läuft über bis zu 3 Spielrunden. Jede Spielrunde hat 5 oder 10 Durchgänge.</div>',
+          '<div>• Der erste Durchgang der ersten Spielrunde startet immer mit „Schuss einfach“.</div>',
+          '<div>• Eine Partie kann jederzeit sofort vorzeitig über den roten Button „Spielrunde beenden“ beendet werden.</div>',
+          '<div>• Grün markierte Spieler-Karten sind aktiv, graue Karten sind ausgestiegen.</div>',
+          '<div>• Nutze auf der Spielerkarte die Buttons Verloren, Lustknobeln, Ausstieg oder Wiedereinsteigen.</div>',
+          '<div>• Verloren oder Lustknobeln verteilt automatisch je 1 Strafpunkt an alle anderen aktiven Spieler.</div>',
+          '<div>• Nach dem letzten Durchgang (5/5 oder 10/10) jeder Spielrunde muss die Spielrunde über den roten Button „Spielrunde beenden“ immer zuerst beendet werden.</div>',
+          '<div>• Danach wird immer die Zwischen-/End-Abrechnung angezeigt, die bei Bedarf als Text in die Zwischenablage kopiert werden kann.</div>',
+          '<div>• Erst danach kann es mit der nächsten Spielrunde weitergehen.</div>',
+          '<div>• Verlauf und Historie sind über die Bereiche unten oder das Menü erreichbar. Dort kann auch immer der letzte vergebene Strafpunkt rückgängig gemacht werden.</div>',
+          '<div>• Sicherungsdateien eines Spiels und ein sauberer Neustart liegen im Burger-Menü unter Werkzeuge.</div>',
+          '</div>'
+        ].join(''),
         actions: [
           { label: 'Schließen', value: 'ok', className: 'primary' }
         ]
@@ -2829,6 +3062,7 @@
       if (type === 'loss') return 'blue';
       if (type === 'lust') return 'violet';
       if (type === 'exit') return 'amber';
+      if (type === 'mattenflucht' || type === 'wuerfelflucht' || type === 'neuwuerfeln') return 'cash';
       if (type === 'roundFinish') return 'red';
       if (type === 'playerAdd' || type === 'rejoin') return 'green';
       return 'blue';
@@ -2842,6 +3076,9 @@
         lust: 'Lustknobeln',
         exit: 'Ausstieg',
         rejoin: 'Wiedereinstieg',
+        mattenflucht: 'Matten-Flucht',
+        wuerfelflucht: 'Würfel-Flucht',
+        neuwuerfeln: 'Neu-Würfeln',
         roundFinish: 'Endabrechnung'
       };
       return map[type] || type;
